@@ -41,6 +41,8 @@ size_t DSPStream::readBytes(uint8_t *buffer, size_t length)
         s = -lt;
       s16[i] = (int16_t)s;
     }
+
+    dither_process(s16, count);
   }
   return n;
 }

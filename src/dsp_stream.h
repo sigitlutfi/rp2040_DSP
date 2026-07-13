@@ -4,6 +4,7 @@
 #include "eq.h"
 #include "stereo_width.h"
 #include "exciter.h"
+#include "dither.h"
 
 extern volatile bool eq_needs_reinit;
 extern EQ3Band eq_state;
