@@ -1,7 +1,7 @@
-#include "eq.h"
+#include "eq_cmsis.h"
 #include <math.h>
 
-static void calc_biquad(int type, float freq, float gain_db, float q, float fs, float *c)
+static void calc_coeffs_cmsis(int type, float freq, float gain_db, float q, float fs, float *c)
 {
   float A = powf(10.0f, gain_db / 40.0f);
   float w0 = 2.0f * 3.14159265f * freq / fs;
@@ -41,6 +41,7 @@ static void calc_biquad(int type, float freq, float gain_db, float q, float fs, 
   }
 
   float inv_a0 = 1.0f / a0;
+  // CMSIS-DSP order: b0, b1, b2, a1, a2 (a0 is normalized to 1)
   c[0] = b0 * inv_a0;
   c[1] = b1 * inv_a0;
   c[2] = b2 * inv_a0;
@@ -48,75 +49,62 @@ static void calc_biquad(int type, float freq, float gain_db, float q, float fs, 
   c[4] = a2 * inv_a0;
 }
 
-void eq_set_band(EQ3Band &eq, int band, float freq, float gain_db, float q, uint32_t sample_rate)
+void eq_cmsis_set_band(EQ3BandCMSIS &eq, int band, float freq, float gain_db, float q, uint32_t sample_rate)
 {
   int types[] = {0, 1, 2};
   float c[5];
-  calc_biquad(types[band], freq, gain_db, q, (float)sample_rate, c);
+  calc_coeffs_cmsis(types[band], freq, gain_db, q, (float)sample_rate, c);
 
   for (int ch = 0; ch < 2; ch++)
   {
-    Biquad &b = eq.band[ch][band];
-    b.b0 = c[0];
-    b.b1 = c[1];
-    b.b2 = c[2];
-    b.a1 = c[3];
-    b.a2 = c[4];
-    b.x1 = b.x2 = b.y1 = b.y2 = 0;
+    BiquadCMSIS &b = eq.band[ch][band];
+    for (int i = 0; i < 5; i++)
+      b.coeffs[i] = c[i];
+    for (int i = 0; i < 4; i++)
+      b.state[i] = 0.0f;
+
+    arm_biquad_cascade_df1_init_f32(&b.inst, 1, b.coeffs, b.state);
   }
 }
 
-void eq_init(EQ3Band &eq, uint32_t sample_rate)
+void eq_cmsis_init(EQ3BandCMSIS &eq, uint32_t sample_rate)
 {
-  eq_set_band(eq, 0, 200.0f, 4.0f, 0.6f, sample_rate);
-  eq_set_band(eq, 1, 1000.0f, 2.0f, 0.9f, sample_rate);
-  eq_set_band(eq, 2, 8000.0f, 3.0f, 0.707f, sample_rate);
+  eq_cmsis_set_band(eq, 0, 200.0f, 0.0f, 0.707f, sample_rate);
+  eq_cmsis_set_band(eq, 1, 1000.0f, 0.0f, 1.0f, sample_rate);
+  eq_cmsis_set_band(eq, 2, 8000.0f, 0.0f, 0.707f, sample_rate);
 }
 
-static void biquad_process(Biquad &b, int16_t *data, size_t n)
-{
-  float b0 = b.b0, b1 = b.b1, b2 = b.b2;
-  float a1 = b.a1, a2 = b.a2;
-  float x1 = b.x1, x2 = b.x2, y1 = b.y1, y2 = b.y2;
-
-  for (size_t i = 0; i < n; i++)
-  {
-    float x0 = (float)data[i];
-    float acc = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-    x2 = x1;
-    x1 = x0;
-    y2 = y1;
-    y1 = acc;
-    if (acc > 32767.0f)
-      acc = 32767.0f;
-    else if (acc < -32768.0f)
-      acc = -32768.0f;
-    data[i] = (int16_t)acc;
-  }
-
-  b.x1 = x1;
-  b.x2 = x2;
-  b.y1 = y1;
-  b.y2 = y2;
-}
-
-void eq_process(EQ3Band &eq, int16_t *s16, size_t count)
+void eq_cmsis_process(EQ3BandCMSIS &eq, int16_t *s16, size_t count)
 {
   size_t frames = count / 2;
+  float tmp[512];
 
   for (int ch = 0; ch < 2; ch++)
   {
+    // int16 → float
+    for (size_t i = 0; i < frames; i++)
+      tmp[i] = (float)s16[i * 2 + ch];
+
+    // 3 bands berturut-turut
     for (int band = 0; band < 3; band++)
     {
-      // extract channel, process, write back
-      int16_t tmp[512];
-      for (size_t i = 0; i < frames; i++)
-        tmp[i] = s16[i * 2 + ch];
+      float out[512];
+      arm_biquad_cascade_df1_f32(&eq.band[ch][band].inst, tmp, out, frames);
 
-      biquad_process(eq.band[ch][band], tmp, frames);
-
+      // copy balik ke tmp
       for (size_t i = 0; i < frames; i++)
-        s16[i * 2 + ch] = tmp[i];
+        tmp[i] = out[i];
+    }
+
+    // float → int16, clamp
+    for (size_t i = 0; i < frames; i++)
+    {
+      float v = tmp[i];
+      if (v > 32767.0f)
+        v = 32767.0f;
+      else if (v < -32768.0f)
+        v = -32768.0f;
+      s16[i * 2 + ch] = (int16_t)v;
     }
   }
 }

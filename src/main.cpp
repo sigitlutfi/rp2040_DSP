@@ -8,6 +8,8 @@
 #include "led.h"
 #include "serial_cmd.h"
 
+// Nanti kalau PCM1808 ada, tinggal ganti memset(usb_tx_buf, 0, ...) → baca dari I2S RX PCM1808.
+
 // ---------- Global State ----------
 volatile uint32_t usb_bytes_in = 0;
 volatile uint32_t underflow_count = 0;
@@ -24,6 +26,7 @@ DSPStream dsp_stream(queue);
 StreamCopy copier(i2s, dsp_stream);
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 uint8_t usb_read_buf[USB_READ_BUF_SIZE];
+uint8_t usb_tx_buf[USB_READ_BUF_SIZE];
 
 void setup()
 {
@@ -43,22 +46,22 @@ void setup()
   queue.begin();
   Serial.println("[core0] Queue buffer ready (32KB)");
 
-  auto usb_cfg = usb_in.defaultConfig(RX_MODE);
+  auto usb_cfg = usb_in.defaultConfig(RXTX_MODE);
   usb_cfg.copyFrom(AUDIO_INFO);
   usb_cfg.enable_interrupt_ep = true;
   usb_cfg.enable_multi_sample_rate = false;
   usb_cfg.vid = 0xCafe;
   usb_cfg.pid = 0x4010;
   usb_cfg.manufacturer = "RP2040";
-  usb_cfg.product = "KONTOL";
+  usb_cfg.product = "RYNLABS";
 
   if (!usb_in.begin(usb_cfg))
     Serial.println("[core0] ERROR: USB Audio init gagal");
   else
-    Serial.println("[core0] USB Audio (RX) ready [44.1kHz, interrupt EP]");
+    Serial.println("[core0] USB Audio (RXTX) ready [44.1kHz, interrupt EP]");
 
   usb_in.setSampleRateCallback([](uint32_t rate)
-                                {
+                               {
     current_sample_rate = rate;
     eq_needs_reinit = true;
     queue.flush();
@@ -95,7 +98,8 @@ void setup()
   }
 
   serial_cmd_init();
-  Serial.println("[core0] DSPStream: EQ → Width → Gain → Limiter (Core1)");
+  Serial.println("[core0] DSPStream: EQ → Width → Exciter → Gain → Limiter → Dither (Core1)");
+  Serial.println("[core0] USB TX: Mic input (silence placeholder)");
   Serial.println("[core0] Cmd: g/l/w<1.0-3.0> | eb/em/et<-12~12dB> | status");
   Serial.println("[core0] Setup selesai.");
 }
@@ -111,6 +115,9 @@ void loop()
 
   led_update(strip, underflow_count);
   serial_cmd_process();
+
+  memset(usb_tx_buf, 0, sizeof(usb_tx_buf));
+  usb_in.write(usb_tx_buf, sizeof(usb_tx_buf));
 }
 
 void setup1() {}
