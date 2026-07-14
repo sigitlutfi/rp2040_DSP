@@ -5,6 +5,7 @@
 
 #include "config.h"
 #include "dsp_stream.h"
+#include "dsp_reverb.h"
 #include "led.h"
 #include "serial_cmd.h"
 
@@ -46,6 +47,11 @@ void setup()
   queue.begin();
   Serial.println("[core0] Queue buffer ready (32KB)");
 
+  // Init reverb (heap allocation, uses config.h defaults)
+  reverb_init(reverb_state, 44100, REVERB_DELAY_MS);
+  Serial.printf("[core0] Reverb ready (delay=%dms wet=%.0f%% fb=%.0f%%)\n",
+                (int)REVERB_DELAY_MS, REVERB_WET * 100, REVERB_FEEDBACK * 100);
+
   auto usb_cfg = usb_in.defaultConfig(RXTX_MODE);
   usb_cfg.copyFrom(AUDIO_INFO);
   usb_cfg.enable_interrupt_ep = true;
@@ -78,6 +84,13 @@ void setup()
       pre_buffered = false;
     } });
 
+  // USB volume callback: auto-toggle loudness when PC volume < 40%
+  usb_in.setVolumeCallback([](float vol, uint8_t ch)
+                           {
+    if (ch == 0) // master channel only
+      loudness_set_usb_volume(loudness_state, vol, current_sample_rate);
+  });
+
   auto i2s_cfg = i2s.defaultConfig(TX_MODE);
   i2s_cfg.copyFrom(AUDIO_INFO);
   i2s_cfg.pin_bck = PIN_BCK;
@@ -98,8 +111,10 @@ void setup()
   }
 
   serial_cmd_init();
-  Serial.println("[core0] DSPStream: EQ → Width → Exciter → Gain → Limiter → Dither (Core1)");
+  Serial.println("[core0] DSPStream: Gate → EQ → Width → Loudness → Exciter → Reverb → Comp → Gain → Limit → Dither (Core1)");
   Serial.println("[core0] USB TX: Mic input (silence placeholder)");
+  Serial.println("[core0] Loudness: auto on < 40% vol | Cmd: loud on/off/auto/<0-100>");
+  Serial.println("[core0] Reverb: ON by default | Cmd: rvb on/off/w/f/d");
   Serial.println("[core0] Cmd: g/l/w<1.0-3.0> | eb/em/et<-12~12dB> | status");
   Serial.println("[core0] Setup selesai.");
 }
@@ -113,6 +128,16 @@ void loop()
     usb_bytes_in += n;
   }
 
+  // Pre-buffer: wait for enough data before starting playback
+  if (streaming_active && !pre_buffered)
+  {
+    if (buffer.available() >= PRE_BUFFER_THRESHOLD)
+    {
+      pre_buffered = true;
+      dsp_needs_reset = true; // reset DSP states to avoid transient
+    }
+  }
+
   led_update(strip, underflow_count);
   serial_cmd_process();
 
@@ -124,5 +149,7 @@ void setup1() {}
 
 void loop1()
 {
+  if (!pre_buffered)
+    return;
   copier.copy();
 }

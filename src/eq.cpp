@@ -1,7 +1,8 @@
 #include "eq.h"
+#include "config.h"
 #include <math.h>
 
-static void calc_biquad(int type, float freq, float gain_db, float q, float fs, float *c)
+void calc_biquad(int type, float freq, float gain_db, float q, float fs, float *c)
 {
   float A = powf(10.0f, gain_db / 40.0f);
   float w0 = 2.0f * 3.14159265f * freq / fs;
@@ -68,9 +69,9 @@ void eq_set_band(EQ3Band &eq, int band, float freq, float gain_db, float q, uint
 
 void eq_init(EQ3Band &eq, uint32_t sample_rate)
 {
-  eq_set_band(eq, 0, 200.0f, 4.0f, 0.6f, sample_rate);
-  eq_set_band(eq, 1, 1000.0f, 2.0f, 0.9f, sample_rate);
-  eq_set_band(eq, 2, 8000.0f, 3.0f, 0.707f, sample_rate);
+  eq_set_band(eq, 0, EQ_BASS_FREQ, EQ_BASS_DB, EQ_BASS_Q, sample_rate);
+  eq_set_band(eq, 1, EQ_MID_FREQ, EQ_MID_DB, EQ_MID_Q, sample_rate);
+  eq_set_band(eq, 2, EQ_TREBLE_FREQ, EQ_TREBLE_DB, EQ_TREBLE_Q, sample_rate);
 }
 
 static void biquad_process(Biquad &b, int16_t *data, size_t n)

@@ -1,9 +1,7 @@
 #include "exciter.h"
+#include "config.h"
 
-// Soft saturation: x - x³/16
-// Adds warm harmonics (2nd, 4th, 6th)
-// Mix 0.0 = bypass, 1.0 = full
-static float exciter_mix = 0.8f;
+static float exciter_mix = EXCITER_MIX;
 
 void exciter_process(int16_t *s16, size_t count)
 {

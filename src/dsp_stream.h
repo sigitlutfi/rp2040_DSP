@@ -4,10 +4,21 @@
 #include "eq.h"
 #include "stereo_width.h"
 #include "exciter.h"
+#include "compressor.h"
+#include "dsp_gain.h"
+#include "dsp_limiter.h"
+#include "noise_gate.h"
+#include "loudness.h"
+#include "dsp_reverb.h"
 #include "dither.h"
 
 extern volatile bool eq_needs_reinit;
+extern volatile bool dsp_needs_reset;
 extern EQ3Band eq_state;
+extern GainState gain_state;
+extern LimiterState limiter_state;
+extern LoudnessState loudness_state;
+extern ReverbState reverb_state;
 
 class DSPStream : public Stream
 {
