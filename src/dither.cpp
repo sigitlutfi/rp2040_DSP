@@ -8,11 +8,12 @@ static int16_t tpdf_dither()
   rng_state ^= rng_state << 13;
   rng_state ^= rng_state >> 17;
   rng_state ^= rng_state << 5;
+  if (rng_state == 0) rng_state = 12345;
 
-  // two uniform → triangular distribution
-  int32_t r1 = (rng_state >> 16) & 0x7FFF; // 0..32767
-  int32_t r2 = (rng_state) & 0x7FFF;       // 0..32767
-  return (int16_t)((r1 + r2) - 32767);     // ±1 LSB
+  // Two random bits → triangular ±1 LSB
+  int32_t r1 = rng_state & 1;
+  int32_t r2 = (rng_state >> 1) & 1;
+  return (int16_t)(r1 + r2 - 1); // -1, 0, or +1
 }
 
 void dither_process(int16_t *s16, size_t count)

@@ -27,6 +27,15 @@ extern volatile uint32_t current_sample_rate;
 // ---------- DSP Bypass ----------
 const bool DSP_BYPASS = false; // true = skip all processing
 
+// ---------- Per-module enable (debug: one at a time) ----------
+const bool EQ_ENABLED_DEFAULT = true;        // 3-band EQ (float biquad)
+const bool WIDTH_ENABLED_DEFAULT = false;    // stereo width (Q8 int)
+const bool GATE_ENABLED_DEFAULT = false;     // noise gate
+const bool COMP_ENABLED_DEFAULT = false;     // compressor
+const bool EXCITER_ENABLED_DEFAULT = false;  // exciter
+const bool REVERB_ENABLED_DEFAULT = false;   // reverb
+const bool LOUDNESS_ENABLED_DEFAULT = false; // loudness
+
 // ---------- EQ Defaults ----------
 const float EQ_BASS_FREQ = 200.0f;
 const float EQ_BASS_DB = 5.0f;

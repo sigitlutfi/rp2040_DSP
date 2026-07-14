@@ -1,20 +1,24 @@
 #include "exciter.h"
 #include "config.h"
 
-static float exciter_mix = EXCITER_MIX;
+bool exciter_enabled = EXCITER_ENABLED_DEFAULT;
+static int16_t exciter_mix_q8 = (int16_t)(EXCITER_MIX * 256.0f);
 
 void exciter_process(int16_t *s16, size_t count)
 {
-  float mix = exciter_mix;
+  if (!exciter_enabled)
+    return;
+
+  int32_t mix = exciter_mix_q8;
+
   for (size_t i = 0; i < count; i++)
   {
-    float x = (float)s16[i] / 32768.0f;    // normalize to [-1, 1]
-    float wet = x - (x * x * x) * 0.0625f; // x - x³/16
-    float y = x + (wet - x) * mix;         // dry + wet * mix
-    if (y > 1.0f)
-      y = 1.0f;
-    else if (y < -1.0f)
-      y = -1.0f;
-    s16[i] = (int16_t)(y * 32768.0f);
+    int32_t x = s16[i];
+    int32_t x2 = (x * x) >> 15;   // x² in Q15
+    int32_t x3 = (x2 * x) >> 15;  // x³ in Q15
+    int32_t y = x - ((x3 * mix) >> 12); // x - mix * x³/16
+    if (y > 32767) y = 32767;
+    else if (y < -32768) y = -32768;
+    s16[i] = (int16_t)y;
   }
 }

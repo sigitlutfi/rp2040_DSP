@@ -4,10 +4,11 @@
 
 struct NoiseGate
 {
+  bool active;
   int16_t threshold; // Q8, misal -40dB = 10 (256 * 10^(-40/20))
   int16_t attack;    // coefficient Q8
   int16_t release;   // coefficient Q8
-  float envelope;
+  int16_t envelope;
   bool gate_open;
 };
 

@@ -4,6 +4,7 @@
 
 void compressor_init(CompressorState &c, int16_t threshold_q8, int16_t ratio_q8)
 {
+  c.active = true;
   c.threshold = threshold_q8;
   c.ratio = ratio_q8;
   c.attack = COMPRESSOR_ATTACK;
@@ -13,6 +14,9 @@ void compressor_init(CompressorState &c, int16_t threshold_q8, int16_t ratio_q8)
 
 void compressor_process(CompressorState &c, int16_t *s16, size_t count)
 {
+  if (!c.active)
+    return;
+
   float env = c.envelope;
   float thresh = (float)c.threshold;
   float ratio_inv = 256.0f / (float)c.ratio; // 1/ratio in Q8

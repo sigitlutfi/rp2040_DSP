@@ -5,7 +5,7 @@
 
 #include "config.h"
 #include "dsp_stream.h"
-#include "dsp_reverb.h"
+#include "dsp_converter.h"
 #include "led.h"
 #include "serial_cmd.h"
 
@@ -25,6 +25,7 @@ BufferRP2040 buffer(QUEUE_ENTRIES, QUEUE_BUF_SIZE);
 QueueStream queue(buffer);
 DSPStream dsp_stream(queue);
 StreamCopy copier(i2s, dsp_stream);
+DSPConverter dsp_converter;
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 uint8_t usb_read_buf[USB_READ_BUF_SIZE];
 uint8_t usb_tx_buf[USB_READ_BUF_SIZE];
@@ -46,11 +47,6 @@ void setup()
 
   queue.begin();
   Serial.println("[core0] Queue buffer ready (32KB)");
-
-  // Init reverb (heap allocation, uses config.h defaults)
-  reverb_init(reverb_state, 44100, REVERB_DELAY_MS);
-  Serial.printf("[core0] Reverb ready (delay=%dms wet=%.0f%% fb=%.0f%%)\n",
-                (int)REVERB_DELAY_MS, REVERB_WET * 100, REVERB_FEEDBACK * 100);
 
   auto usb_cfg = usb_in.defaultConfig(RXTX_MODE);
   usb_cfg.copyFrom(AUDIO_INFO);
@@ -84,13 +80,6 @@ void setup()
       pre_buffered = false;
     } });
 
-  // USB volume callback: auto-toggle loudness when PC volume < 40%
-  usb_in.setVolumeCallback([](float vol, uint8_t ch)
-                           {
-    if (ch == 0) // master channel only
-      loudness_set_usb_volume(loudness_state, vol, current_sample_rate);
-  });
-
   auto i2s_cfg = i2s.defaultConfig(TX_MODE);
   i2s_cfg.copyFrom(AUDIO_INFO);
   i2s_cfg.pin_bck = PIN_BCK;
@@ -111,11 +100,9 @@ void setup()
   }
 
   serial_cmd_init();
-  Serial.println("[core0] DSPStream: Gate → EQ → Width → Loudness → Exciter → Reverb → Comp → Gain → Limit → Dither (Core1)");
+  Serial.println("[core0] DSP: Gain → EQ → Width → Limiter → Dither (Core1)");
   Serial.println("[core0] USB TX: Mic input (silence placeholder)");
-  Serial.println("[core0] Loudness: auto on < 40% vol | Cmd: loud on/off/auto/<0-100>");
-  Serial.println("[core0] Reverb: ON by default | Cmd: rvb on/off/w/f/d");
-  Serial.println("[core0] Cmd: g/l/w<1.0-3.0> | eb/em/et<-12~12dB> | status");
+  Serial.println("[core0] Cmd: GET/SET/PRESET/STATUS/HELP");
   Serial.println("[core0] Setup selesai.");
 }
 
@@ -151,5 +138,5 @@ void loop1()
 {
   if (!pre_buffered)
     return;
-  copier.copy();
+  copier.copy(dsp_converter);
 }

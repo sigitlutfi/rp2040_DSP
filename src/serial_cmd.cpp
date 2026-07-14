@@ -4,176 +4,277 @@
 #include "eq.h"
 #include "dsp_stream.h"
 
-extern GainState gain_state;
-extern LimiterState limiter_state;
-extern LoudnessState loudness_state;
-extern ReverbState reverb_state;
+extern EQ3Band eq_state;
 extern volatile int16_t stereo_width_q8;
+extern volatile bool eq_needs_reinit;
+extern bool eq_enabled;
+extern bool width_enabled;
 
-static unsigned long last_log_time = 0;
+#define FIRMWARE_VERSION "1.0.0"
 
+// ---- presets ----
+struct Preset
+{
+  const char *name;
+  const char *desc;
+  float eq_bass;
+  float eq_mid;
+  float eq_treble;
+  float width;
+  float gain;
+  int limit;
+};
+
+static const Preset presets[] = {
+    {"flat", "no processing", 0, 0, 0, 1.0f, 1.0f, 32000},
+    {"rock", "bass+treble punch", 6.0f, 0, 4.0f, 1.3f, 1.0f, 30000},
+    {"jazz", "warm mids", 2.0f, 3.0f, 1.0f, 1.5f, 1.0f, 30000},
+    {"classical", "wide stereo", 0, 0, 2.0f, 2.0f, 1.0f, 32000},
+    {"vocal", "mid-forward", -2.0f, 6.0f, 2.0f, 1.0f, 1.0f, 28000},
+    {"bass_boost", "heavy low end", 10.0f, 0, 0, 1.0f, 1.0f, 30000},
+    {"treble_boost", "crisp highs", 0, 0, 10.0f, 1.0f, 1.0f, 30000},
+};
+static const int NUM_PRESETS = sizeof(presets) / sizeof(presets[0]);
+
+// ---- apply preset ----
+static void apply_preset(const Preset &p)
+{
+  eq_enabled = true;
+  eq_set_band(eq_state, 0, EQ_BASS_FREQ, p.eq_bass, EQ_BASS_Q, current_sample_rate);
+  eq_set_band(eq_state, 1, EQ_MID_FREQ, p.eq_mid, EQ_MID_Q, current_sample_rate);
+  eq_set_band(eq_state, 2, EQ_TREBLE_FREQ, p.eq_treble, EQ_TREBLE_Q, current_sample_rate);
+  width_enabled = true;
+  stereo_width_q8 = (int16_t)(p.width * 256);
+  gain_state.gain_q8 = (int16_t)(p.gain * 256);
+  limiter_state.threshold = p.limit;
+}
+
+// ---- get param value as string ----
+static String get_param(const String &param)
+{
+  if (param == "gain")
+    return String(gain_state.gain_q8 / 256.0f, 2);
+  if (param == "limit")
+    return String(limiter_state.threshold);
+  if (param == "eq")
+    return eq_enabled ? "on" : "off";
+  if (param == "eq_bass")
+    return String(eq_state.db[0], 1);
+  if (param == "eq_mid")
+    return String(eq_state.db[1], 1);
+  if (param == "eq_treble")
+    return String(eq_state.db[2], 1);
+  if (param == "width")
+    return width_enabled ? "on" : "off";
+  if (param == "width_val")
+    return String(stereo_width_q8 / 256.0f, 2);
+  return "";
+}
+
+// ---- set param ----
+static bool set_param(const String &param, const String &val)
+{
+  if (param == "gain")
+  {
+    float v = val.toFloat();
+    if (v < 0.1f || v > 4.0f) return false;
+    gain_state.gain_q8 = (int16_t)(v * 256);
+  }
+  else if (param == "limit")
+  {
+    int v = val.toInt();
+    if (v < 1000 || v > 32767) return false;
+    limiter_state.threshold = v;
+  }
+  else if (param == "eq")
+  {
+    eq_enabled = (val == "on");
+  }
+  else if (param == "eq_bass")
+  {
+    float v = val.toFloat();
+    if (v < -12.0f || v > 12.0f) return false;
+    eq_set_band(eq_state, 0, EQ_BASS_FREQ, v, EQ_BASS_Q, current_sample_rate);
+  }
+  else if (param == "eq_mid")
+  {
+    float v = val.toFloat();
+    if (v < -12.0f || v > 12.0f) return false;
+    eq_set_band(eq_state, 1, EQ_MID_FREQ, v, EQ_MID_Q, current_sample_rate);
+  }
+  else if (param == "eq_treble")
+  {
+    float v = val.toFloat();
+    if (v < -12.0f || v > 12.0f) return false;
+    eq_set_band(eq_state, 2, EQ_TREBLE_FREQ, v, EQ_TREBLE_Q, current_sample_rate);
+  }
+  else if (param == "width")
+  {
+    width_enabled = (val == "on");
+  }
+  else if (param == "width_val")
+  {
+    float v = val.toFloat();
+    if (v < 1.0f || v > 3.0f) return false;
+    stereo_width_q8 = (int16_t)(v * 256);
+  }
+  else
+  {
+    return false;
+  }
+  return true;
+}
+
+// ---- help text ----
+static void print_help()
+{
+  Serial.println("=== RYNLABS USB Audio DSP ===");
+  Serial.printf("  firmware: %s | rate: %luHz\n", FIRMWARE_VERSION, current_sample_rate);
+  Serial.println("");
+  Serial.println("PING              - connection test");
+  Serial.println("VERSION           - firmware version");
+  Serial.println("HELP              - this message");
+  Serial.println("STATUS            - all params + stats");
+  Serial.println("");
+  Serial.println("GET ALL           - all param values");
+  Serial.println("GET <param>       - single param value");
+  Serial.println("SET <param> <val> - set param (OK/ERR)");
+  Serial.println("PRESETS           - list available presets");
+  Serial.println("PRESET <name>     - load preset");
+  Serial.println("");
+  Serial.println("params:");
+  Serial.println("  gain         0.1-4.0");
+  Serial.println("  limit        1000-32767");
+  Serial.println("  eq           on/off");
+  Serial.println("  eq_bass      -12 to 12 dB");
+  Serial.println("  eq_mid       -12 to 12 dB");
+  Serial.println("  eq_treble    -12 to 12 dB");
+  Serial.println("  width        on/off");
+  Serial.println("  width_val    1.0-3.0");
+}
+
+// ---- public API ----
 void serial_cmd_init()
 {
-  // Nothing to init
 }
 
 void serial_cmd_process()
 {
-  if (!streaming_active)
+  if (!Serial.available())
+    return;
+
+  String line = Serial.readStringUntil('\n');
+  line.trim();
+  if (line.length() == 0)
+    return;
+
+  // ---- PING ----
+  if (line == "PING")
   {
-    if (Serial.available())
-    {
-      String line = Serial.readStringUntil('\n');
-      line.trim();
-
-      if (line.startsWith("g "))
-      {
-        float val = line.substring(2).toFloat();
-        if (val >= 0.1f && val <= 4.0f)
-        {
-          gain_state.gain_q8 = (int16_t)(val * 256);
-          Serial.printf("[gain] = %.2fx\n", val);
-        }
-      }
-      else if (line.startsWith("l "))
-      {
-        int val = line.substring(2).toInt();
-        if (val >= 1000 && val <= 32767)
-        {
-          limiter_state.threshold = val;
-          Serial.printf("[limit] = %d (%.0f%%)\n", limiter_state.threshold,
-                        limiter_state.threshold * 100.0 / 32767);
-        }
-      }
-      else if (line.startsWith("eb "))
-      {
-        float val = line.substring(3).toFloat();
-        if (val >= -12.0f && val <= 12.0f)
-        {
-          eq_set_band(eq_state, 0, EQ_BASS_FREQ, val, EQ_BASS_Q, current_sample_rate);
-          Serial.printf("[eq bass] = %.1f dB @ %.0fHz\n", val, EQ_BASS_FREQ);
-        }
-      }
-      else if (line.startsWith("em "))
-      {
-        float val = line.substring(3).toFloat();
-        if (val >= -12.0f && val <= 12.0f)
-        {
-          eq_set_band(eq_state, 1, EQ_MID_FREQ, val, EQ_MID_Q, current_sample_rate);
-          Serial.printf("[eq mid] = %.1f dB @ %.0fHz\n", val, EQ_MID_FREQ);
-        }
-      }
-      else if (line.startsWith("et "))
-      {
-        float val = line.substring(3).toFloat();
-        if (val >= -12.0f && val <= 12.0f)
-        {
-          eq_set_band(eq_state, 2, EQ_TREBLE_FREQ, val, EQ_TREBLE_Q, current_sample_rate);
-          Serial.printf("[eq treble] = %.1f dB @ %.0fHz\n", val, EQ_TREBLE_FREQ);
-        }
-      }
-      else if (line.startsWith("w "))
-      {
-        float val = line.substring(2).toFloat();
-        if (val >= 1.0f && val <= 3.0f)
-        {
-          stereo_width_q8 = (int16_t)(val * 256);
-          Serial.printf("[width] = %.1fx\n", val);
-        }
-      }
-      else if (line == "loud auto")
-      {
-        loudness_set_manual(loudness_state, false, 0, current_sample_rate);
-        loudness_state.auto_mode = true;
-        Serial.printf("[loudness] auto mode (activates < 40%% vol)\n");
-      }
-      else if (line == "loud on")
-      {
-        loudness_set_manual(loudness_state, true, 50, current_sample_rate);
-        loudness_state.auto_mode = false;
-        Serial.printf("[loudness] manual ON (50%%)\n");
-      }
-      else if (line == "loud off")
-      {
-        loudness_set_manual(loudness_state, false, 0, current_sample_rate);
-        loudness_state.auto_mode = false;
-        Serial.printf("[loudness] OFF\n");
-      }
-      else if (line.startsWith("loud "))
-      {
-        int val = line.substring(5).toInt();
-        if (val >= 0 && val <= 100)
-        {
-          loudness_set_manual(loudness_state, val > 0, (uint8_t)val, current_sample_rate);
-          loudness_state.auto_mode = false;
-          Serial.printf("[loudness] manual %s (%d%%)\n", val > 0 ? "ON" : "OFF", val);
-        }
-      }
-      else if (line == "eq")
-      {
-        Serial.printf("[eq] bass=%.1f dB mid=%.1f dB treble=%.1f dB\n",
-                      EQ_BASS_DB, EQ_MID_DB, EQ_TREBLE_DB);
-      }
-      else if (line == "rvb on")
-      {
-        reverb_state.active = true;
-        Serial.printf("[reverb] ON (wet=%.0f%% fb=%.0f%% delay=%dms)\n",
-                      reverb_state.wet * 100, reverb_state.feedback * 100,
-                      (int)(reverb_state.buf_len * 1000.0f / current_sample_rate));
-      }
-      else if (line == "rvb off")
-      {
-        reverb_state.active = false;
-        Serial.printf("[reverb] OFF\n");
-      }
-      else if (line.startsWith("rvb w"))
-      {
-        float val = line.substring(5).toFloat();
-        if (val >= 0.0f && val <= 80.0f)
-        {
-          reverb_set_wet(reverb_state, val / 100.0f);
-          Serial.printf("[reverb] wet = %.0f%%\n", val);
-        }
-      }
-      else if (line.startsWith("rvb f"))
-      {
-        float val = line.substring(5).toFloat();
-        if (val >= 10.0f && val <= 60.0f)
-        {
-          reverb_set_feedback(reverb_state, val / 100.0f);
-          Serial.printf("[reverb] feedback = %.0f%%\n", val);
-        }
-      }
-      else if (line.startsWith("rvb d"))
-      {
-        int val = line.substring(5).toInt();
-        if (val >= 15 && val <= 60)
-        {
-          reverb_set_delay(reverb_state, current_sample_rate, (float)val);
-          Serial.printf("[reverb] delay = %dms\n", val);
-        }
-      }
-      else if (line == "status")
-      {
-        Serial.printf("gain=%.2fx limit=%d (%.0f%%)\n",
-                      gain_state.gain_q8 / 256.0, limiter_state.threshold,
-                      limiter_state.threshold * 100.0 / 32767);
-        Serial.printf("loudness=%s %d%% usb_vol=%.0f%% underflow=%lu rate=%luHz\n",
-                      loudness_state.active ? "ON" : "off",
-                      loudness_state.intensity,
-                      loudness_state.usb_volume * 100.0f,
-                      underflow_count, current_sample_rate);
-        Serial.printf("reverb=%s wet=%.0f%% fb=%.0f%%\n",
-                      reverb_state.active ? "ON" : "off",
-                      reverb_state.wet * 100, reverb_state.feedback * 100);
-      }
-    }
-
-    if (millis() - last_log_time > 2000)
-    {
-      last_log_time = millis();
-      Serial.printf("[idle] underflow=%lu | rate=%luHz\n",
-                    underflow_count, current_sample_rate);
-    }
+    Serial.println("PONG");
+    return;
   }
+
+  // ---- VERSION ----
+  if (line == "VERSION")
+  {
+    Serial.printf("VER %s\n", FIRMWARE_VERSION);
+    return;
+  }
+
+  // ---- HELP ----
+  if (line == "HELP" || line == "h" || line == "?")
+  {
+    print_help();
+    return;
+  }
+
+  // ---- STATUS ----
+  if (line == "STATUS" || line == "status")
+  {
+    Serial.printf("gain=%.2f limit=%d\n",
+                  gain_state.gain_q8 / 256.0f, limiter_state.threshold);
+    Serial.printf("eq=%s bass=%.1f mid=%.1f treble=%.1f\n",
+                  eq_enabled ? "on" : "off",
+                  eq_state.db[0], eq_state.db[1], eq_state.db[2]);
+    Serial.printf("width=%s val=%.2f\n",
+                  width_enabled ? "on" : "off",
+                  stereo_width_q8 / 256.0f);
+    Serial.printf("underflow=%lu rate=%luHz\n", underflow_count, current_sample_rate);
+    return;
+  }
+
+  // ---- PRESETS (list) ----
+  if (line == "PRESETS")
+  {
+    for (int i = 0; i < NUM_PRESETS; i++)
+      Serial.printf("  %s - %s\n", presets[i].name, presets[i].desc);
+    return;
+  }
+
+  // ---- GET ----
+  if (line.startsWith("GET "))
+  {
+    String param = line.substring(4);
+    param.trim();
+    if (param == "ALL")
+    {
+      const char *params[] = {
+          "gain", "limit",
+          "eq", "eq_bass", "eq_mid", "eq_treble",
+          "width", "width_val"};
+      for (int i = 0; i < 8; i++)
+        Serial.printf("%s=%s%s", params[i], get_param(params[i]).c_str(),
+                      i < 7 ? ";" : "\n");
+      return;
+    }
+    String val = get_param(param);
+    if (val.length() > 0)
+      Serial.printf("%s=%s\n", param.c_str(), val.c_str());
+    else
+      Serial.println("ERR unknown param");
+    return;
+  }
+
+  // ---- SET ----
+  if (line.startsWith("SET "))
+  {
+    String rest = line.substring(4);
+    rest.trim();
+    int sp = rest.indexOf(' ');
+    if (sp < 0)
+    {
+      Serial.println("ERR syntax: SET <param> <value>");
+      return;
+    }
+    String param = rest.substring(0, sp);
+    String val = rest.substring(sp + 1);
+    param.trim();
+    val.trim();
+    if (set_param(param, val))
+      Serial.println("OK");
+    else
+      Serial.println("ERR invalid param or range");
+    return;
+  }
+
+  // ---- PRESET ----
+  if (line.startsWith("PRESET "))
+  {
+    String name = line.substring(7);
+    name.trim();
+    for (int i = 0; i < NUM_PRESETS; i++)
+    {
+      if (name == presets[i].name)
+      {
+        apply_preset(presets[i]);
+        Serial.printf("OK preset=%s\n", name.c_str());
+        return;
+      }
+    }
+    Serial.println("ERR unknown preset");
+    return;
+  }
+
+  Serial.println("ERR unknown cmd (try HELP)");
 }
