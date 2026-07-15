@@ -6,8 +6,6 @@
 #include "config.h"
 #include "dsp_stream.h"
 #include "dsp_converter.h"
-#include "dsp_gain.h"
-#include "dsp_limiter.h"
 #include "eq.h"
 #include "led.h"
 #include "serial_cmd.h"
@@ -21,6 +19,7 @@ volatile uint32_t underflow_count = 0;
 volatile bool streaming_active = false;
 volatile bool pre_buffered = false;
 volatile uint32_t current_sample_rate = 44100;
+volatile int16_t usb_volume_q8 = 256;
 
 // ---------- Audio Objects ----------
 USBAudioStream usb_in;
@@ -28,7 +27,7 @@ I2SStream i2s;
 BufferRP2040 buffer(QUEUE_ENTRIES, QUEUE_BUF_SIZE);
 QueueStream queue(buffer);
 DSPStream dsp_stream(queue);
-StreamCopy copier;
+StreamCopy copier(i2s, dsp_stream);
 DSPConverter dsp_converter;
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 uint8_t usb_read_buf[USB_READ_BUF_SIZE];
@@ -46,7 +45,6 @@ void setup()
 
   led_init(strip);
 
-  gain_init(gain_state, GAIN_Q8);
   limiter_init(limiter_state, LIMITER_THRESHOLD);
 
   if (!TinyUSBDevice.isInitialized())
@@ -57,7 +55,7 @@ void setup()
 
   auto usb_cfg = usb_in.defaultConfig(RXTX_MODE);
   usb_cfg.copyFrom(AUDIO_INFO);
-  usb_cfg.enable_interrupt_ep = true;
+  usb_cfg.volume_active = true;
   usb_cfg.enable_multi_sample_rate = false;
   usb_cfg.vid = 0xCafe;
   usb_cfg.pid = 0x4010;
@@ -74,7 +72,18 @@ void setup()
     current_sample_rate = rate;
     eq_needs_reinit = true;
     queue.clear();
-    pre_buffered = false; });
+    pre_buffered = false;
+    AudioInfo newInfo(rate, 2, 16);
+    i2s.setAudioInfo(newInfo); });
+
+  usb_in.setStreamingStateCallback([](bool tx, bool rx)
+                                   {
+    streaming_active = rx;
+    if (!rx)
+    {
+      queue.clear();
+      pre_buffered = false;
+    } });
 
   auto i2s_cfg = i2s.defaultConfig(TX_MODE);
   i2s_cfg.copyFrom(AUDIO_INFO);
@@ -87,26 +96,12 @@ void setup()
     Serial.printf("[core0] I2S ready (BCK=%d WS=%d DATA=%d)\n",
                   PIN_BCK, PIN_WS, PIN_DATA);
 
-  copier.begin(i2s, dsp_stream);
-
   if (TinyUSBDevice.mounted())
   {
     TinyUSBDevice.detach();
     delay(10);
     TinyUSBDevice.attach();
     Serial.println("[core0] USB re-enumerated");
-  }
-
-  // Floating pin proteksi — semua pin sisa di-output LOW (impedansi rendah)
-  const int used_pins[] = {PIN_BCK, PIN_WS, PIN_DATA, LED_PIN};
-  for (int i = 0; i < 30; i++) {
-    bool used = false;
-    for (int j = 0; j < 4; j++)
-      if (i == used_pins[j]) { used = true; break; }
-    if (!used) {
-      pinMode(i, OUTPUT);
-      digitalWrite(i, LOW);
-    }
   }
 
   serial_cmd_init();
@@ -135,10 +130,23 @@ void loop()
     usb_bytes_in += n;
   }
 
-  if (buffer.available() >= PRE_BUFFER_THRESHOLD)
-    pre_buffered = true;
+  // Pre-buffer: wait for enough data before starting playback
+  if (streaming_active && !pre_buffered)
+  {
+    if (buffer.available() >= PRE_BUFFER_THRESHOLD)
+    {
+      pre_buffered = true;
+      dsp_needs_reset = true; // reset DSP states to avoid transient
+    }
+  }
 
   process_pending_eq();
+
+  // Poll USB host volume → integer Q8 for DSP chain
+  float vol = usb_in.volume(1);
+  bool muted = usb_in.isMute(1);
+  usb_volume_q8 = muted ? 0 : (int16_t)(vol * 256.0f);
+
   led_update(strip, underflow_count);
   serial_cmd_process();
 

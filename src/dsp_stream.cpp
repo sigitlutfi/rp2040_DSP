@@ -9,23 +9,11 @@ EQ3Band eq_state;
 // ---------- Stereo Width ----------
 extern volatile int16_t stereo_width_q8;
 
-// ---------- Compressor ----------
-CompressorState comp_state;
-
-// ---------- Gain ----------
-GainState gain_state;
 
 // ---------- Limiter ----------
 LimiterState limiter_state;
 
-// ---------- Noise Gate ----------
-NoiseGate gate_state;
 
-// ---------- Loudness ----------
-LoudnessState loudness_state;
-
-// ---------- Reverb ----------
-ReverbState reverb_state;
 
 // ---------- Per-module enable flags ----------
 bool eq_enabled = EQ_ENABLED_DEFAULT;

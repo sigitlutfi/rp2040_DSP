@@ -12,7 +12,6 @@ size_t DSPConverter::convert(uint8_t *src, size_t byte_count)
     eq_init(eq_state, current_sample_rate);
     eq_needs_reinit = false;
     limiter_init(limiter_state, LIMITER_THRESHOLD);
-    gain_init(gain_state, GAIN_Q8);
     dsp_needs_reset = false;
   }
 
@@ -22,17 +21,20 @@ size_t DSPConverter::convert(uint8_t *src, size_t byte_count)
     eq_needs_reinit = false;
   }
 
-  gain_process(gain_state, s16, count);
-
   if (eq_enabled)
     eq_process(eq_state, s16, count);
 
   if (width_enabled)
     stereo_width_process(s16, count, stereo_width_q8);
 
-  limiter_process(limiter_state, s16, count);
+  // Apply USB host volume (integer Q8 multiply)
+  int16_t vol = usb_volume_q8;
+  if (vol < 256) {
+    for (size_t i = 0; i < count; i++)
+      s16[i] = (int16_t)((int32_t)s16[i] * vol >> 8);
+  }
 
-  dither_process(s16, count);
+  limiter_process(limiter_state, s16, count);
 
   return byte_count;
 }

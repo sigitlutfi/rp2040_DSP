@@ -41,7 +41,7 @@ const bool LOUDNESS_ENABLED_DEFAULT = false; // loudness
 
 // ---------- EQ Defaults ----------
 const float EQ_BASS_FREQ = 200.0f;
-const float EQ_BASS_DB = 5.0f;
+const float EQ_BASS_DB = 3.0f;
 const float EQ_BASS_Q = 0.5f;
 const float EQ_MID_FREQ = 1000.0f;
 const float EQ_MID_DB = 1.0f;
@@ -72,7 +72,7 @@ const int16_t COMPRESSOR_ATTACK = 20;       // ~10ms
 const int16_t COMPRESSOR_RELEASE = 5;       // ~100ms
 
 // ---------- Gain Defaults ----------
-const int16_t GAIN_Q8 = 282; // 1.1x
+// gain module archived — volume controlled by PC USB slider
 
 // ---------- Limiter Defaults ----------
 const int16_t LIMITER_THRESHOLD = 32000; // ~0.98 of max

@@ -25,18 +25,17 @@ struct Preset
   float eq_mid;
   float eq_treble;
   float width;
-  float gain;
   int limit;
 };
 
 static const Preset presets[] = {
-    {"flat", "no processing", 0, 0, 0, 1.0f, 1.0f, 32000},
-    {"rock", "bass+treble punch", 6.0f, 0, 4.0f, 1.3f, 1.0f, 30000},
-    {"jazz", "warm mids", 2.0f, 3.0f, 1.0f, 1.5f, 1.0f, 30000},
-    {"classical", "wide stereo", 0, 0, 2.0f, 2.0f, 1.0f, 32000},
-    {"vocal", "mid-forward", -2.0f, 6.0f, 2.0f, 1.0f, 1.0f, 28000},
-    {"bass_boost", "heavy low end", 10.0f, 0, 0, 1.0f, 1.0f, 30000},
-    {"treble_boost", "crisp highs", 0, 0, 10.0f, 1.0f, 1.0f, 30000},
+    {"flat", "no processing", 0, 0, 0, 1.0f, 32000},
+    {"rock", "bass+treble punch", 6.0f, 0, 4.0f, 1.3f, 30000},
+    {"jazz", "warm mids", 2.0f, 3.0f, 1.0f, 1.5f, 30000},
+    {"classical", "wide stereo", 0, 0, 2.0f, 2.0f, 32000},
+    {"vocal", "mid-forward", -2.0f, 6.0f, 2.0f, 1.0f, 28000},
+    {"bass_boost", "heavy low end", 10.0f, 0, 0, 1.0f, 30000},
+    {"treble_boost", "crisp highs", 0, 0, 10.0f, 1.0f, 30000},
 };
 static const int NUM_PRESETS = sizeof(presets) / sizeof(presets[0]);
 
@@ -50,15 +49,12 @@ static void apply_preset(const Preset &p)
   eq_pending_update = true;
   width_enabled = true;
   stereo_width_q8 = (int16_t)(p.width * 256);
-  gain_state.gain_q8 = (int16_t)(p.gain * 256);
   limiter_state.threshold = p.limit;
 }
 
 // ---- get param value as string ----
 static String get_param(const String &param)
 {
-  if (param == "gain")
-    return String(gain_state.gain_q8 / 256.0f, 2);
   if (param == "limit")
     return String(limiter_state.threshold);
   if (param == "eq")
@@ -79,13 +75,7 @@ static String get_param(const String &param)
 // ---- set param ----
 static bool set_param(const String &param, const String &val)
 {
-  if (param == "gain")
-  {
-    float v = val.toFloat();
-    if (v < 0.1f || v > 4.0f) return false;
-    gain_state.gain_q8 = (int16_t)(v * 256);
-  }
-  else if (param == "limit")
+  if (param == "limit")
   {
     int v = val.toInt();
     if (v < 1000 || v > 32767) return false;
@@ -152,7 +142,6 @@ static void print_help()
   Serial.println("RESET             - reset DSP stream (fix no-sound issue)");
   Serial.println("");
   Serial.println("params:");
-  Serial.println("  gain         0.1-4.0");
   Serial.println("  limit        1000-32767");
   Serial.println("  eq           on/off");
   Serial.println("  eq_bass      -12 to 12 dB");
@@ -201,8 +190,7 @@ void serial_cmd_process()
   // ---- STATUS ----
   if (line == "STATUS" || line == "status")
   {
-    Serial.printf("gain=%.2f limit=%d\n",
-                  gain_state.gain_q8 / 256.0f, limiter_state.threshold);
+    Serial.printf("limit=%d\n", limiter_state.threshold);
     Serial.printf("eq=%s bass=%.1f mid=%.1f treble=%.1f\n",
                   eq_enabled ? "on" : "off",
                   eq_state.db[0], eq_state.db[1], eq_state.db[2]);
@@ -229,10 +217,10 @@ void serial_cmd_process()
     if (param == "ALL")
     {
       const char *params[] = {
-          "gain", "limit",
+          "limit",
           "eq", "eq_bass", "eq_mid", "eq_treble",
           "width", "width_val"};
-      for (int i = 0; i < 8; i++)
+      for (int i = 0; i < 7; i++)
         Serial.printf("%s=%s%s", params[i], get_param(params[i]).c_str(),
                       i < 7 ? ";" : "\n");
       return;

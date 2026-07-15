@@ -3,30 +3,22 @@
 #include "config.h"
 #include "eq.h"
 #include "stereo_width.h"
-#include "exciter.h"
-#include "compressor.h"
-#include "dsp_gain.h"
 #include "dsp_limiter.h"
-#include "noise_gate.h"
-#include "loudness.h"
-#include "dsp_reverb.h"
-#include "dither.h"
 
 extern volatile bool eq_needs_reinit;
 extern volatile bool dsp_needs_reset;
 extern EQ3Band eq_state;
-extern GainState gain_state;
 extern LimiterState limiter_state;
-extern NoiseGate gate_state;
-extern CompressorState comp_state;
-extern LoudnessState loudness_state;
-extern ReverbState reverb_state;
+// extern NoiseGate gate_state;
+// extern CompressorState comp_state;
+// extern LoudnessState loudness_state;
+// extern ReverbState reverb_state;
 extern volatile int16_t stereo_width_q8;
+extern volatile int16_t usb_volume_q8;
 
 // per-module enable flags
 extern bool eq_enabled;
 extern bool width_enabled;
-extern bool exciter_enabled;
 
 class DSPStream : public Stream
 {
