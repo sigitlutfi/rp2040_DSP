@@ -3,7 +3,7 @@
 // ---------- EQ ----------
 volatile bool eq_needs_reinit = false;
 volatile bool eq_pending_update = false;
-volatile float eq_pending_db[3] = {0.0f, 0.0f, 0.0f};
+volatile float eq_pending_db[3] = {EQ_BASS_DB, EQ_MID_DB, EQ_TREBLE_DB};
 EQ3Band eq_state;
 
 // ---------- Stereo Width ----------
@@ -24,5 +24,10 @@ volatile bool dsp_needs_reset = false;
 
 size_t DSPStream::readBytes(uint8_t *buffer, size_t length)
 {
-  return _source.readBytes(buffer, length);
+  size_t n = _source.readBytes(buffer, length);
+  if (n == 0) {
+    memset(buffer, 0, length);
+    return length;
+  }
+  return n;
 }

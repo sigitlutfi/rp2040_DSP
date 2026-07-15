@@ -9,6 +9,8 @@
 #include "eq.h"
 #include "led.h"
 #include "serial_cmd.h"
+#include "i2c_scanner.h"
+#include "oled.h"
 
 extern volatile bool eq_pending_update;
 extern volatile float eq_pending_db[3];
@@ -20,6 +22,7 @@ volatile bool streaming_active = false;
 volatile bool pre_buffered = false;
 volatile uint32_t current_sample_rate = 44100;
 volatile int16_t usb_volume_q8 = 256;
+volatile bool queue_needs_clear = false;
 
 // ---------- Audio Objects ----------
 USBAudioStream usb_in;
@@ -46,6 +49,11 @@ void setup()
   led_init(strip);
 
   limiter_init(limiter_state, LIMITER_THRESHOLD);
+  eq_init(eq_state, current_sample_rate);
+  i2c_scanner_init();
+  oled_init();
+  oled_splash();
+  delay(1500);
 
   if (!TinyUSBDevice.isInitialized())
     TinyUSBDevice.begin(0);
@@ -71,17 +79,18 @@ void setup()
                                {
     current_sample_rate = rate;
     eq_needs_reinit = true;
-    queue.clear();
+    queue_needs_clear = true;
     pre_buffered = false;
+    oled_dirty = true;
     AudioInfo newInfo(rate, 2, 16);
     i2s.setAudioInfo(newInfo); });
 
   usb_in.setStreamingStateCallback([](bool tx, bool rx)
                                    {
     streaming_active = rx;
+    oled_dirty = true;
     if (!rx)
     {
-      queue.clear();
       pre_buffered = false;
     } });
 
@@ -119,6 +128,7 @@ void process_pending_eq()
     eq_set_band(eq_state, b, freqs[b], eq_pending_db[b], qs[b], current_sample_rate);
 
   eq_pending_update = false;
+  oled_dirty = true;
 }
 
 void loop()
@@ -137,6 +147,7 @@ void loop()
     {
       pre_buffered = true;
       dsp_needs_reset = true; // reset DSP states to avoid transient
+      oled_dirty = true;
     }
   }
 
@@ -145,10 +156,17 @@ void loop()
   // Poll USB host volume → integer Q8 for DSP chain
   float vol = usb_in.volume(1);
   bool muted = usb_in.isMute(1);
-  usb_volume_q8 = muted ? 0 : (int16_t)(vol * 256.0f);
+  int16_t new_vol = muted ? 0 : (int16_t)(vol * 256.0f);
+  if (new_vol != usb_volume_q8) {
+    usb_volume_q8 = new_vol;
+    oled_dirty = true;
+  }
 
   led_update(strip, underflow_count);
   serial_cmd_process();
+
+  // OLED refresh (only when data changes)
+  oled_update();
 
   memset(usb_tx_buf, 0, sizeof(usb_tx_buf));
   usb_in.write(usb_tx_buf, sizeof(usb_tx_buf));
@@ -158,7 +176,9 @@ void setup1() {}
 
 void loop1()
 {
-  if (!pre_buffered)
-    return;
+  if (queue_needs_clear) {
+    queue.clear();
+    queue_needs_clear = false;
+  }
   copier.copy(dsp_converter);
 }

@@ -3,6 +3,8 @@
 #include "config.h"
 #include "eq.h"
 #include "dsp_stream.h"
+#include "i2c_scanner.h"
+#include "oled.h"
 
 extern EQ3Band eq_state;
 extern volatile int16_t stereo_width_q8;
@@ -84,6 +86,7 @@ static bool set_param(const String &param, const String &val)
   {
     return false;
   }
+  oled_dirty = true;
   return true;
 }
 
@@ -101,6 +104,7 @@ static void print_help()
   Serial.println("GET ALL           - all param values");
   Serial.println("GET <param>       - single param value");
   Serial.println("SET <param> <val> - set param (OK/ERR)");
+  Serial.println("SCAN              - scan I2C bus");
   Serial.println("RESET             - reset DSP stream (fix no-sound issue)");
   Serial.println("");
   Serial.println("params:");
@@ -215,6 +219,13 @@ void serial_cmd_process()
     streaming_active = false;
     pre_buffered = false;
     Serial.println("OK DSP reset");
+    return;
+  }
+
+  // ---- SCAN ----
+  if (line == "SCAN" || line == "scan")
+  {
+    i2c_scanner_scan();
     return;
   }
 
