@@ -17,7 +17,7 @@ volatile bool oled_dirty = true;
 
 void oled_init()
 {
-  Wire.setClock(400000);
+  Wire.setClock(100000);
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR))
   {
     Serial.println("SSD1306 init failed");
