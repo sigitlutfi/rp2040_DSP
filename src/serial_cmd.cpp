@@ -7,8 +7,12 @@
 extern EQ3Band eq_state;
 extern volatile int16_t stereo_width_q8;
 extern volatile bool eq_needs_reinit;
+extern volatile bool eq_pending_update;
+extern volatile float eq_pending_db[3];
 extern bool eq_enabled;
 extern bool width_enabled;
+extern volatile bool pre_buffered;
+extern volatile bool streaming_active;
 
 #define FIRMWARE_VERSION "1.0.0"
 
@@ -40,9 +44,10 @@ static const int NUM_PRESETS = sizeof(presets) / sizeof(presets[0]);
 static void apply_preset(const Preset &p)
 {
   eq_enabled = true;
-  eq_set_band(eq_state, 0, EQ_BASS_FREQ, p.eq_bass, EQ_BASS_Q, current_sample_rate);
-  eq_set_band(eq_state, 1, EQ_MID_FREQ, p.eq_mid, EQ_MID_Q, current_sample_rate);
-  eq_set_band(eq_state, 2, EQ_TREBLE_FREQ, p.eq_treble, EQ_TREBLE_Q, current_sample_rate);
+  eq_pending_db[0] = p.eq_bass;
+  eq_pending_db[1] = p.eq_mid;
+  eq_pending_db[2] = p.eq_treble;
+  eq_pending_update = true;
   width_enabled = true;
   stereo_width_q8 = (int16_t)(p.width * 256);
   gain_state.gain_q8 = (int16_t)(p.gain * 256);
@@ -94,19 +99,22 @@ static bool set_param(const String &param, const String &val)
   {
     float v = val.toFloat();
     if (v < -12.0f || v > 12.0f) return false;
-    eq_set_band(eq_state, 0, EQ_BASS_FREQ, v, EQ_BASS_Q, current_sample_rate);
+    eq_pending_db[0] = v;
+    eq_pending_update = true;
   }
   else if (param == "eq_mid")
   {
     float v = val.toFloat();
     if (v < -12.0f || v > 12.0f) return false;
-    eq_set_band(eq_state, 1, EQ_MID_FREQ, v, EQ_MID_Q, current_sample_rate);
+    eq_pending_db[1] = v;
+    eq_pending_update = true;
   }
   else if (param == "eq_treble")
   {
     float v = val.toFloat();
     if (v < -12.0f || v > 12.0f) return false;
-    eq_set_band(eq_state, 2, EQ_TREBLE_FREQ, v, EQ_TREBLE_Q, current_sample_rate);
+    eq_pending_db[2] = v;
+    eq_pending_update = true;
   }
   else if (param == "width")
   {
@@ -141,6 +149,7 @@ static void print_help()
   Serial.println("SET <param> <val> - set param (OK/ERR)");
   Serial.println("PRESETS           - list available presets");
   Serial.println("PRESET <name>     - load preset");
+  Serial.println("RESET             - reset DSP stream (fix no-sound issue)");
   Serial.println("");
   Serial.println("params:");
   Serial.println("  gain         0.1-4.0");
@@ -273,6 +282,15 @@ void serial_cmd_process()
       }
     }
     Serial.println("ERR unknown preset");
+    return;
+  }
+
+  // ---- RESET ----
+  if (line == "RESET" || line == "reset")
+  {
+    streaming_active = false;
+    pre_buffered = false;
+    Serial.println("OK DSP reset");
     return;
   }
 

@@ -6,10 +6,14 @@
 #include "config.h"
 #include "dsp_stream.h"
 #include "dsp_converter.h"
+#include "dsp_gain.h"
+#include "dsp_limiter.h"
+#include "eq.h"
 #include "led.h"
 #include "serial_cmd.h"
 
-// Nanti kalau PCM1808 ada, tinggal ganti memset(usb_tx_buf, 0, ...) → baca dari I2S RX PCM1808.
+extern volatile bool eq_pending_update;
+extern volatile float eq_pending_db[3];
 
 // ---------- Global State ----------
 volatile uint32_t usb_bytes_in = 0;
@@ -24,7 +28,7 @@ I2SStream i2s;
 BufferRP2040 buffer(QUEUE_ENTRIES, QUEUE_BUF_SIZE);
 QueueStream queue(buffer);
 DSPStream dsp_stream(queue);
-StreamCopy copier(i2s, dsp_stream);
+StreamCopy copier;
 DSPConverter dsp_converter;
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 uint8_t usb_read_buf[USB_READ_BUF_SIZE];
@@ -38,15 +42,18 @@ void setup()
     ;
 
   AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Warning);
-  Serial.println("=== RP2040 USB Soundcard + Gain ===");
+  Serial.println("=== RP2040 Minimal Soundcard ===");
 
   led_init(strip);
+
+  gain_init(gain_state, GAIN_Q8);
+  limiter_init(limiter_state, LIMITER_THRESHOLD);
 
   if (!TinyUSBDevice.isInitialized())
     TinyUSBDevice.begin(0);
 
   queue.begin();
-  Serial.println("[core0] Queue buffer ready (32KB)");
+  Serial.println("[core0] Queue buffer ready");
 
   auto usb_cfg = usb_in.defaultConfig(RXTX_MODE);
   usb_cfg.copyFrom(AUDIO_INFO);
@@ -60,25 +67,14 @@ void setup()
   if (!usb_in.begin(usb_cfg))
     Serial.println("[core0] ERROR: USB Audio init gagal");
   else
-    Serial.println("[core0] USB Audio (RXTX) ready [44.1kHz, interrupt EP]");
+    Serial.println("[core0] USB Audio ready");
 
   usb_in.setSampleRateCallback([](uint32_t rate)
                                {
     current_sample_rate = rate;
     eq_needs_reinit = true;
-    queue.flush();
-    pre_buffered = false;
-    AudioInfo newInfo(rate, 2, 16);
-    i2s.setAudioInfo(newInfo); });
-
-  usb_in.setStreamingStateCallback([](bool tx, bool rx)
-                                   {
-    streaming_active = rx;
-    if (!rx)
-    {
-      queue.flush();
-      pre_buffered = false;
-    } });
+    queue.clear();
+    pre_buffered = false; });
 
   auto i2s_cfg = i2s.defaultConfig(TX_MODE);
   i2s_cfg.copyFrom(AUDIO_INFO);
@@ -86,10 +82,12 @@ void setup()
   i2s_cfg.pin_ws = PIN_WS;
   i2s_cfg.pin_data = PIN_DATA;
   if (!i2s.begin(i2s_cfg))
-    Serial.println("[core0] ERROR: I2S init gagal");
+    Serial.printf("[core0] ERROR: I2S init gagal\n");
   else
     Serial.printf("[core0] I2S ready (BCK=%d WS=%d DATA=%d)\n",
                   PIN_BCK, PIN_WS, PIN_DATA);
+
+  copier.begin(i2s, dsp_stream);
 
   if (TinyUSBDevice.mounted())
   {
@@ -99,11 +97,33 @@ void setup()
     Serial.println("[core0] USB re-enumerated");
   }
 
+  // Floating pin proteksi — semua pin sisa di-output LOW (impedansi rendah)
+  const int used_pins[] = {PIN_BCK, PIN_WS, PIN_DATA, LED_PIN};
+  for (int i = 0; i < 30; i++) {
+    bool used = false;
+    for (int j = 0; j < 4; j++)
+      if (i == used_pins[j]) { used = true; break; }
+    if (!used) {
+      pinMode(i, OUTPUT);
+      digitalWrite(i, LOW);
+    }
+  }
+
   serial_cmd_init();
-  Serial.println("[core0] DSP: Gain → EQ → Width → Limiter → Dither (Core1)");
-  Serial.println("[core0] USB TX: Mic input (silence placeholder)");
-  Serial.println("[core0] Cmd: GET/SET/PRESET/STATUS/HELP");
   Serial.println("[core0] Setup selesai.");
+}
+
+void process_pending_eq()
+{
+  if (!eq_pending_update)
+    return;
+
+  float freqs[] = {EQ_BASS_FREQ, EQ_MID_FREQ, EQ_TREBLE_FREQ};
+  float qs[] = {EQ_BASS_Q, EQ_MID_Q, EQ_TREBLE_Q};
+  for (int b = 0; b < 3; b++)
+    eq_set_band(eq_state, b, freqs[b], eq_pending_db[b], qs[b], current_sample_rate);
+
+  eq_pending_update = false;
 }
 
 void loop()
@@ -115,16 +135,10 @@ void loop()
     usb_bytes_in += n;
   }
 
-  // Pre-buffer: wait for enough data before starting playback
-  if (streaming_active && !pre_buffered)
-  {
-    if (buffer.available() >= PRE_BUFFER_THRESHOLD)
-    {
-      pre_buffered = true;
-      dsp_needs_reset = true; // reset DSP states to avoid transient
-    }
-  }
+  if (buffer.available() >= PRE_BUFFER_THRESHOLD)
+    pre_buffered = true;
 
+  process_pending_eq();
   led_update(strip, underflow_count);
   serial_cmd_process();
 

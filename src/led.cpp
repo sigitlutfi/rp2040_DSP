@@ -14,37 +14,23 @@ void led_init(Adafruit_NeoPixel &strip)
 
 void led_update(Adafruit_NeoPixel &strip, uint32_t underflow_count)
 {
-  bool need_update = false;
+  if (millis() - last_strip_update < 50)
+    return;
+  last_strip_update = millis();
 
-  if (streaming_active)
+  if (underflow_count != last_underflow_count)
   {
-    if (underflow_count != last_underflow_count)
-    {
-      last_underflow_count = underflow_count;
-      last_underflow_blink = millis();
-      underflow_blink_state = true;
-    }
-    if (underflow_blink_state && (millis() - last_underflow_blink < 300))
-    {
-      strip.setPixelColor(0, strip.Color(255, 0, 0));
-    }
-    else
-    {
-      underflow_blink_state = false;
-      strip.setPixelColor(0, strip.Color(0, 0, 40));
-    }
-    need_update = true;
+    last_underflow_count = underflow_count;
+    last_underflow_blink = millis();
+    underflow_blink_state = true;
   }
+
+  if (underflow_blink_state && (millis() - last_underflow_blink < 300))
+    strip.setPixelColor(0, strip.Color(255, 0, 0));
   else
   {
-    bool on = (millis() / 500) % 2;
-    strip.setPixelColor(0, on ? strip.Color(0, 0, 40) : strip.Color(0, 0, 0));
-    need_update = true;
+    underflow_blink_state = false;
+    strip.setPixelColor(0, strip.Color(0, 0, 40));
   }
-
-  if (need_update && millis() - last_strip_update >= 20)
-  {
-    last_strip_update = millis();
-    strip.show();
-  }
+  strip.show();
 }

@@ -17,6 +17,9 @@ const int QUEUE_BUF_SIZE = 32;
 const int PRE_BUFFER_THRESHOLD = 16384;
 const int USB_READ_BUF_SIZE = 512;
 
+// ---------- Streaming timeout ----------
+const unsigned long STREAM_TIMEOUT_MS = 2000;
+
 // ---------- Global State (defined in main.cpp) ----------
 extern volatile uint32_t usb_bytes_in;
 extern volatile uint32_t underflow_count;

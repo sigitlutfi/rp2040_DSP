@@ -2,6 +2,8 @@
 
 // ---------- EQ ----------
 volatile bool eq_needs_reinit = false;
+volatile bool eq_pending_update = false;
+volatile float eq_pending_db[3] = {0.0f, 0.0f, 0.0f};
 EQ3Band eq_state;
 
 // ---------- Stereo Width ----------
