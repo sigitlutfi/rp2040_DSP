@@ -16,42 +16,6 @@ extern volatile bool streaming_active;
 
 #define FIRMWARE_VERSION "1.0.0"
 
-// ---- presets ----
-struct Preset
-{
-  const char *name;
-  const char *desc;
-  float eq_bass;
-  float eq_mid;
-  float eq_treble;
-  float width;
-  int limit;
-};
-
-static const Preset presets[] = {
-    {"flat", "no processing", 0, 0, 0, 1.0f, 32000},
-    {"rock", "bass+treble punch", 6.0f, 0, 4.0f, 1.3f, 30000},
-    {"jazz", "warm mids", 2.0f, 3.0f, 1.0f, 1.5f, 30000},
-    {"classical", "wide stereo", 0, 0, 2.0f, 2.0f, 32000},
-    {"vocal", "mid-forward", -2.0f, 6.0f, 2.0f, 1.0f, 28000},
-    {"bass_boost", "heavy low end", 10.0f, 0, 0, 1.0f, 30000},
-    {"treble_boost", "crisp highs", 0, 0, 10.0f, 1.0f, 30000},
-};
-static const int NUM_PRESETS = sizeof(presets) / sizeof(presets[0]);
-
-// ---- apply preset ----
-static void apply_preset(const Preset &p)
-{
-  eq_enabled = true;
-  eq_pending_db[0] = p.eq_bass;
-  eq_pending_db[1] = p.eq_mid;
-  eq_pending_db[2] = p.eq_treble;
-  eq_pending_update = true;
-  width_enabled = true;
-  stereo_width_q8 = (int16_t)(p.width * 256);
-  limiter_state.threshold = p.limit;
-}
-
 // ---- get param value as string ----
 static String get_param(const String &param)
 {
@@ -137,8 +101,6 @@ static void print_help()
   Serial.println("GET ALL           - all param values");
   Serial.println("GET <param>       - single param value");
   Serial.println("SET <param> <val> - set param (OK/ERR)");
-  Serial.println("PRESETS           - list available presets");
-  Serial.println("PRESET <name>     - load preset");
   Serial.println("RESET             - reset DSP stream (fix no-sound issue)");
   Serial.println("");
   Serial.println("params:");
@@ -201,14 +163,6 @@ void serial_cmd_process()
     return;
   }
 
-  // ---- PRESETS (list) ----
-  if (line == "PRESETS")
-  {
-    for (int i = 0; i < NUM_PRESETS; i++)
-      Serial.printf("  %s - %s\n", presets[i].name, presets[i].desc);
-    return;
-  }
-
   // ---- GET ----
   if (line.startsWith("GET "))
   {
@@ -252,24 +206,6 @@ void serial_cmd_process()
       Serial.println("OK");
     else
       Serial.println("ERR invalid param or range");
-    return;
-  }
-
-  // ---- PRESET ----
-  if (line.startsWith("PRESET "))
-  {
-    String name = line.substring(7);
-    name.trim();
-    for (int i = 0; i < NUM_PRESETS; i++)
-    {
-      if (name == presets[i].name)
-      {
-        apply_preset(presets[i]);
-        Serial.printf("OK preset=%s\n", name.c_str());
-        return;
-      }
-    }
-    Serial.println("ERR unknown preset");
     return;
   }
 
