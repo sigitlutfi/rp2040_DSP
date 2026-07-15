@@ -16,19 +16,13 @@ LimiterState limiter_state;
 
 
 // ---------- Per-module enable flags ----------
-bool eq_enabled = EQ_ENABLED_DEFAULT;
-bool width_enabled = WIDTH_ENABLED_DEFAULT;
+volatile bool eq_enabled = EQ_ENABLED_DEFAULT;
+volatile bool width_enabled = WIDTH_ENABLED_DEFAULT;
 
 // ---------- Reset flag ----------
 volatile bool dsp_needs_reset = false;
 
 size_t DSPStream::readBytes(uint8_t *buffer, size_t length)
 {
-  size_t total = 0;
-  while (total < length) {
-    int b = read();
-    if (b < 0) break;
-    buffer[total++] = (uint8_t)b;
-  }
-  return total;
+  return _source.readBytes(buffer, length);
 }

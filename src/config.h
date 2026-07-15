@@ -28,16 +28,11 @@ extern volatile bool pre_buffered;
 extern volatile uint32_t current_sample_rate;
 
 // ---------- DSP Bypass ----------
-const bool DSP_BYPASS = false; // true = skip all processing
+const bool DSP_BYPASS = false;
 
-// ---------- Per-module enable (debug: one at a time) ----------
-const bool EQ_ENABLED_DEFAULT = true;        // 3-band EQ (float biquad)
-const bool WIDTH_ENABLED_DEFAULT = false;    // stereo width (Q8 int)
-const bool GATE_ENABLED_DEFAULT = false;     // noise gate
-const bool COMP_ENABLED_DEFAULT = false;     // compressor
-const bool EXCITER_ENABLED_DEFAULT = false;  // exciter
-const bool REVERB_ENABLED_DEFAULT = false;   // reverb
-const bool LOUDNESS_ENABLED_DEFAULT = false; // loudness
+// ---------- Per-module enable ----------
+const bool EQ_ENABLED_DEFAULT = true;
+const bool WIDTH_ENABLED_DEFAULT = false;
 
 // ---------- EQ Defaults ----------
 const float EQ_BASS_FREQ = 200.0f;
@@ -50,35 +45,8 @@ const float EQ_TREBLE_FREQ = 8000.0f;
 const float EQ_TREBLE_DB = 4.2f;
 const float EQ_TREBLE_Q = 0.7f;
 
-// ---------- Noise Gate Defaults ----------
-const int16_t GATE_THRESHOLD_Q8 = 10; // -40dB
-const int16_t GATE_ATTACK = 128;      // fast ~1ms
-const int16_t GATE_RELEASE = 10;      // ~50ms
-
 // ---------- Stereo Width Defaults ----------
 const int16_t STEREO_WIDTH_Q8 = 628; // 1.5x
 
-// ---------- Loudness Defaults ----------
-const bool LOUDNESS_AUTO_DEFAULT = true;    // auto mode on/off
-const bool LOUDNESS_ACTIVE_DEFAULT = false; // manual on/off
-
-// ---------- Exciter Defaults ----------
-const float EXCITER_MIX = 0.8f; // 0.0=bypass, 1.0=full
-
-// ---------- Compressor Defaults ----------
-const int16_t COMPRESSOR_THRESHOLD_Q8 = 82; // -20dB
-const int16_t COMPRESSOR_RATIO_Q8 = 1024;   // 4:1
-const int16_t COMPRESSOR_ATTACK = 20;       // ~10ms
-const int16_t COMPRESSOR_RELEASE = 5;       // ~100ms
-
-// ---------- Gain Defaults ----------
-// gain module archived — volume controlled by PC USB slider
-
 // ---------- Limiter Defaults ----------
-const int16_t LIMITER_THRESHOLD = 32000; // ~0.98 of max
-
-// ---------- Reverb Defaults ----------
-const float REVERB_DELAY_MS = 30.0f; // delay line length (15-60ms)
-const float REVERB_FEEDBACK = 0.30f; // feedback amount (10-60%), higher = longer tail
-const float REVERB_WET = 0.25f;      // wet/dry mix (0-80%), 0.25 = 25% reverb
-const float REVERB_DAMPING = 0.5f;   // high-freq damping (0.0=bright, 1.0=dark), lower = brighter reverb
+const int16_t LIMITER_THRESHOLD = 32000;

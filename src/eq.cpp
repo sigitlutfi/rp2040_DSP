@@ -64,7 +64,7 @@ void eq_set_band(EQ3Band &eq, int band, float freq, float gain_db, float q, uint
     b.b2 = (int16_t)(c[2] * 4096.0f);
     b.a1 = (int16_t)(c[3] * 4096.0f);
     b.a2 = (int16_t)(c[4] * 4096.0f);
-    b.x1 = b.x2 = b.y1 = b.y2 = 0;
+    // Don't zero state variables - causes clicks/pops
   }
 }
 
@@ -103,12 +103,14 @@ static void biquad_band_stereo(int16_t *s16, size_t frames, Biquad &b, int ch)
   b.y1 = y1; b.y2 = y2;
 }
 
+// Process all 3 EQ bands per channel in single pass for better cache behavior
 void eq_process(EQ3Band &eq, int16_t *s16, size_t count)
 {
   size_t frames = count / 2;
+  // Process left channel: all 3 bands sequentially
   for (int band = 0; band < 3; band++)
-  {
     biquad_band_stereo(s16, frames, eq.band[0][band], 0);
+  // Process right channel: all 3 bands sequentially
+  for (int band = 0; band < 3; band++)
     biquad_band_stereo(s16, frames, eq.band[1][band], 1);
-  }
 }

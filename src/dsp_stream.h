@@ -9,16 +9,12 @@ extern volatile bool eq_needs_reinit;
 extern volatile bool dsp_needs_reset;
 extern EQ3Band eq_state;
 extern LimiterState limiter_state;
-// extern NoiseGate gate_state;
-// extern CompressorState comp_state;
-// extern LoudnessState loudness_state;
-// extern ReverbState reverb_state;
 extern volatile int16_t stereo_width_q8;
 extern volatile int16_t usb_volume_q8;
 
-// per-module enable flags
-extern bool eq_enabled;
-extern bool width_enabled;
+// per-module enable flags (volatile: read by core1, written by core0)
+extern volatile bool eq_enabled;
+extern volatile bool width_enabled;
 
 class DSPStream : public Stream
 {

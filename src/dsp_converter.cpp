@@ -11,7 +11,6 @@ size_t DSPConverter::convert(uint8_t *src, size_t byte_count)
   {
     eq_init(eq_state, current_sample_rate);
     eq_needs_reinit = false;
-    limiter_init(limiter_state, LIMITER_THRESHOLD);
     dsp_needs_reset = false;
   }
 

@@ -55,7 +55,7 @@ void setup()
 
   auto usb_cfg = usb_in.defaultConfig(RXTX_MODE);
   usb_cfg.copyFrom(AUDIO_INFO);
-  usb_cfg.volume_active = true;
+  usb_cfg.volume_active = false;
   usb_cfg.enable_multi_sample_rate = false;
   usb_cfg.vid = 0xCafe;
   usb_cfg.pid = 0x4010;

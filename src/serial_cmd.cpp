@@ -9,8 +9,8 @@ extern volatile int16_t stereo_width_q8;
 extern volatile bool eq_needs_reinit;
 extern volatile bool eq_pending_update;
 extern volatile float eq_pending_db[3];
-extern bool eq_enabled;
-extern bool width_enabled;
+extern volatile bool eq_enabled;
+extern volatile bool width_enabled;
 extern volatile bool pre_buffered;
 extern volatile bool streaming_active;
 
@@ -222,7 +222,7 @@ void serial_cmd_process()
           "width", "width_val"};
       for (int i = 0; i < 7; i++)
         Serial.printf("%s=%s%s", params[i], get_param(params[i]).c_str(),
-                      i < 7 ? ";" : "\n");
+                      i < 6 ? ";" : "\n");
       return;
     }
     String val = get_param(param);
