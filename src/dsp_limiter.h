@@ -10,4 +10,5 @@ struct LimiterState
 };
 
 void limiter_init(LimiterState &l, int16_t threshold);
+void limiter_reset(LimiterState &l);
 void limiter_process(LimiterState &l, int16_t *s16, size_t count);

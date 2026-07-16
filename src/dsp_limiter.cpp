@@ -15,6 +15,12 @@ void limiter_init(LimiterState &l, int16_t threshold)
   l.envelope = ONE_Q8;
 }
 
+void limiter_reset(LimiterState &l)
+{
+  l.gain = ONE_Q8;
+  l.envelope = 0;
+}
+
 void limiter_process(LimiterState &l, int16_t *s16, size_t count)
 {
   int16_t thresh = l.threshold;
@@ -25,11 +31,7 @@ void limiter_process(LimiterState &l, int16_t *s16, size_t count)
   {
     // Detect peak (magnitude)
     int32_t sample = s16[i];
-    int16_t abs_sample;
-    if (sample >= 0)
-      abs_sample = (sample > 32767) ? 32767 : (int16_t)sample;
-    else
-      abs_sample = (sample < -32768) ? 32767 : (int16_t)(-sample);
+    int16_t abs_sample = (int16_t)((sample < 0) ? ((sample == -32768) ? 32767 : -sample) : sample);
 
     // Peak follower (envelope)
     if (abs_sample > env)

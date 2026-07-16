@@ -3,6 +3,7 @@
 #include "config.h"
 #include "eq.h"
 #include "dsp_stream.h"
+#include "dsp_converter.h"
 #include "i2c_scanner.h"
 #include "oled.h"
 
@@ -25,12 +26,9 @@ static String get_param(const String &param)
     return String(limiter_state.threshold);
   if (param == "eq")
     return eq_enabled ? "on" : "off";
-  if (param == "eq_bass")
-    return String(eq_state.db[0], 1);
-  if (param == "eq_mid")
-    return String(eq_state.db[1], 1);
-  if (param == "eq_treble")
-    return String(eq_state.db[2], 1);
+  if (param == "eq1" || param == "bass") return String(eq_state.db[0], 1);
+  if (param == "eq2" || param == "mid") return String(eq_state.db[1], 1);
+  if (param == "eq3" || param == "treble") return String(eq_state.db[2], 1);
   if (param == "width")
     return width_enabled ? "on" : "off";
   if (param == "width_val")
@@ -51,25 +49,16 @@ static bool set_param(const String &param, const String &val)
   {
     eq_enabled = (val == "on");
   }
-  else if (param == "eq_bass")
+  else if (param == "eq1" || param == "eq2" || param == "eq3" ||
+           param == "bass" || param == "mid" || param == "treble")
   {
+    int idx;
+    if (param == "bass" || param == "eq1") idx = 0;
+    else if (param == "mid" || param == "eq2") idx = 1;
+    else idx = 2;
     float v = val.toFloat();
     if (v < -12.0f || v > 12.0f) return false;
-    eq_pending_db[0] = v;
-    eq_pending_update = true;
-  }
-  else if (param == "eq_mid")
-  {
-    float v = val.toFloat();
-    if (v < -12.0f || v > 12.0f) return false;
-    eq_pending_db[1] = v;
-    eq_pending_update = true;
-  }
-  else if (param == "eq_treble")
-  {
-    float v = val.toFloat();
-    if (v < -12.0f || v > 12.0f) return false;
-    eq_pending_db[2] = v;
+    eq_pending_db[idx] = v;
     eq_pending_update = true;
   }
   else if (param == "width")
@@ -106,15 +95,16 @@ static void print_help()
   Serial.println("SET <param> <val> - set param (OK/ERR)");
   Serial.println("SCAN              - scan I2C bus");
   Serial.println("RESET             - reset DSP stream (fix no-sound issue)");
+  Serial.println("DISPLAY [mode]    - switch display: 0/dashboard, 1/vu");
   Serial.println("");
   Serial.println("params:");
-  Serial.println("  limit        1000-32767");
-  Serial.println("  eq           on/off");
-  Serial.println("  eq_bass      -12 to 12 dB");
-  Serial.println("  eq_mid       -12 to 12 dB");
-  Serial.println("  eq_treble    -12 to 12 dB");
-  Serial.println("  width        on/off");
-  Serial.println("  width_val    1.0-3.0");
+  Serial.println("  limit          1000-32767");
+  Serial.println("  eq             on/off");
+  Serial.println("  eq1/bass       -12 to 12 dB (200Hz low shelf)");
+  Serial.println("  eq2/mid        -12 to 12 dB (1kHz peaking)");
+  Serial.println("  eq3/treble     -12 to 12 dB (8kHz high shelf)");
+  Serial.println("  width          on/off");
+  Serial.println("  width_val      1.0-3.0");
 }
 
 // ---- public API ----
@@ -157,13 +147,14 @@ void serial_cmd_process()
   if (line == "STATUS" || line == "status")
   {
     Serial.printf("limit=%d\n", limiter_state.threshold);
-    Serial.printf("eq=%s bass=%.1f mid=%.1f treble=%.1f\n",
+    Serial.printf("eq=%s 1:%.1f 2:%.1f 3:%.1f\n",
                   eq_enabled ? "on" : "off",
                   eq_state.db[0], eq_state.db[1], eq_state.db[2]);
     Serial.printf("width=%s val=%.2f\n",
                   width_enabled ? "on" : "off",
                   stereo_width_q8 / 256.0f);
     Serial.printf("underflow=%lu rate=%luHz\n", underflow_count, current_sample_rate);
+    Serial.printf("dsp_cpu=%lusb=%d\n", dsp_cpu_us, dsp_block_bytes);
     return;
   }
 
@@ -176,7 +167,7 @@ void serial_cmd_process()
     {
       const char *params[] = {
           "limit",
-          "eq", "eq_bass", "eq_mid", "eq_treble",
+          "eq", "bass", "mid", "treble",
           "width", "width_val"};
       for (int i = 0; i < 7; i++)
         Serial.printf("%s=%s%s", params[i], get_param(params[i]).c_str(),
@@ -210,6 +201,31 @@ void serial_cmd_process()
       Serial.println("OK");
     else
       Serial.println("ERR invalid param or range");
+    return;
+  }
+
+  // ---- DISPLAY ----
+  if (line.startsWith("DISPLAY"))
+  {
+    String mode = line.substring(7);
+    mode.trim();
+    if (mode == "0" || mode == "dashboard")
+    {
+      oled_mode = 0;
+      oled_dirty = true;
+      Serial.println("OK dashboard");
+    }
+    else if (mode == "1" || mode == "vu")
+    {
+      oled_mode = 1;
+      oled_dirty = true;
+      Serial.println("OK vu meter");
+    }
+    else
+    {
+      Serial.print("OK current: ");
+      Serial.println(oled_mode == 0 ? "dashboard" : "vu");
+    }
     return;
   }
 

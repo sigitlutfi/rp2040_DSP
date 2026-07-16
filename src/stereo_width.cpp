@@ -1,7 +1,7 @@
 #include "stereo_width.h"
 #include "config.h"
 
-volatile int16_t stereo_width_q8 = STEREO_WIDTH_Q8;
+volatile int16_t stereo_width_q8 = STEREO_WIDTH_Q8; // 628/256 = 2.45x
 
 void stereo_width_process(int16_t *s16, size_t count, int16_t width_q8)
 {

@@ -52,9 +52,8 @@ void calc_biquad(int type, float freq, float gain_db, float q, float fs, float *
 void eq_set_band(EQ3Band &eq, int band, float freq, float gain_db, float q, uint32_t sample_rate)
 {
   eq.db[band] = gain_db;
-  int types[] = {0, 1, 2};
   float c[5];
-  calc_biquad(types[band], freq, gain_db, q, (float)sample_rate, c);
+  calc_biquad(band == 0 ? 0 : (band == 2 ? 2 : 1), freq, gain_db, q, (float)sample_rate, c);
 
   for (int ch = 0; ch < 2; ch++)
   {
@@ -64,7 +63,6 @@ void eq_set_band(EQ3Band &eq, int band, float freq, float gain_db, float q, uint
     b.b2 = (int16_t)(c[2] * 4096.0f);
     b.a1 = (int16_t)(c[3] * 4096.0f);
     b.a2 = (int16_t)(c[4] * 4096.0f);
-    // Don't zero state variables - causes clicks/pops
   }
 }
 
@@ -73,6 +71,16 @@ void eq_init(EQ3Band &eq, uint32_t sample_rate)
   eq_set_band(eq, 0, EQ_BASS_FREQ, EQ_BASS_DB, EQ_BASS_Q, sample_rate);
   eq_set_band(eq, 1, EQ_MID_FREQ, EQ_MID_DB, EQ_MID_Q, sample_rate);
   eq_set_band(eq, 2, EQ_TREBLE_FREQ, EQ_TREBLE_DB, EQ_TREBLE_Q, sample_rate);
+}
+
+void eq_reset_state(EQ3Band &eq)
+{
+  for (int ch = 0; ch < 2; ch++)
+    for (int band = 0; band < 3; band++)
+    {
+      Biquad &b = eq.band[ch][band];
+      b.x1 = b.x2 = b.y1 = b.y2 = 0;
+    }
 }
 
 // Process one biquad band on interleaved stereo, one channel
@@ -103,14 +111,12 @@ static void biquad_band_stereo(int16_t *s16, size_t frames, Biquad &b, int ch)
   b.y1 = y1; b.y2 = y2;
 }
 
-// Process all 3 EQ bands per channel in single pass for better cache behavior
+// Process all EQ bands per channel in single pass
 void eq_process(EQ3Band &eq, int16_t *s16, size_t count)
 {
   size_t frames = count / 2;
-  // Process left channel: all 3 bands sequentially
   for (int band = 0; band < 3; band++)
     biquad_band_stereo(s16, frames, eq.band[0][band], 0);
-  // Process right channel: all 3 bands sequentially
   for (int band = 0; band < 3; band++)
     biquad_band_stereo(s16, frames, eq.band[1][band], 1);
 }

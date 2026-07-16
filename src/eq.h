@@ -21,4 +21,5 @@ struct EQ3Band
 void calc_biquad(int type, float freq, float gain_db, float q, float fs, float *c);
 void eq_set_band(EQ3Band &eq, int band, float freq, float gain_db, float q, uint32_t sample_rate);
 void eq_init(EQ3Band &eq, uint32_t sample_rate);
+void eq_reset_state(EQ3Band &eq);
 void eq_process(EQ3Band &eq, int16_t *s16, size_t count);

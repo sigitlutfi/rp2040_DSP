@@ -9,11 +9,8 @@ EQ3Band eq_state;
 // ---------- Stereo Width ----------
 extern volatile int16_t stereo_width_q8;
 
-
 // ---------- Limiter ----------
 LimiterState limiter_state;
-
-
 
 // ---------- Per-module enable flags ----------
 volatile bool eq_enabled = EQ_ENABLED_DEFAULT;
@@ -26,6 +23,7 @@ size_t DSPStream::readBytes(uint8_t *buffer, size_t length)
 {
   size_t n = _source.readBytes(buffer, length);
   if (n == 0) {
+    underflow_count++;
     memset(buffer, 0, length);
     return length;
   }
